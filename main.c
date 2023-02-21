@@ -58,9 +58,11 @@ void app_main()
   ulp_run((&ulp_entry-RTC_SLOW_MEM));
   vTaskDelay(100/portTICK_PERIOD_MS);
   ESP_LOGE("[Main]","Going to sleep...");
-  //while(1){
-   // ESP_LOGE("[Main]","res = %lu",ulp_resu);
-   // vTaskDelay(1000/portTICK_PERIOD_MS);}
+  //uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
+  while(1){
+  uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
+  ESP_LOGE("[Main]","res = 0x%X",res >> 1);
+  vTaskDelay(1000/portTICK_PERIOD_MS);}
   esp_deep_sleep_start();
 }
 
