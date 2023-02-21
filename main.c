@@ -33,15 +33,15 @@ typedef struct {
     bool tx_lsbfirst;       /*!< Send LSB first */
 }hulp_i2c_controller_config_t;
 
-void hulp_configure_i2c_pins(gpio_num_t , gpio_num_t );
+void hulp_configure_i2c_pins();
 esp_err_t hulp_configure_i2c_controller( hulp_i2c_controller_config_t* );
 void register_i2c_slave(uint8_t );
 static void start_ulp_program();
 void ini_config(hulp_i2c_controller_config_t *);
 
-RTC_DATA_ATTR hulp_i2c_controller_config_t* config;
-gpio_num_t sda_pin = 4;
-gpio_num_t scl_pin = 0;
+RTC_DATA_ATTR hulp_i2c_controller_config_t config;
+//gpio_num_t sda_pin = 4;
+//gpio_num_t scl_pin = 0;
 
 void app_main() 
 {
@@ -49,14 +49,19 @@ void app_main()
   esp_sleep_enable_ulp_wakeup();                       //Prévient le microcontroleur qu'il peut etre reveille par l'ulp
   if (cause != ESP_SLEEP_WAKEUP_ULP)
   {
-    hulp_configure_i2c_pins(scl_pin, sda_pin);
-    ini_config(config);
-    hulp_configure_i2c_controller(config);
+   hulp_configure_i2c_pins();
+   ini_config(&config);
+   hulp_configure_i2c_controller(&config);
     start_ulp_program();
   }
-  ulp_run((&ulp_entry-RTC_SLOW_MEM));
   register_i2c_slave(0x77);
- 
+  ulp_run((&ulp_entry-RTC_SLOW_MEM));
+  vTaskDelay(100/portTICK_PERIOD_MS);
+  ESP_LOGE("[Main]","Going to sleep...");
+  //while(1){
+   // ESP_LOGE("[Main]","res = %lu",ulp_resu);
+   // vTaskDelay(1000/portTICK_PERIOD_MS);}
+  esp_deep_sleep_start();
 }
 
 
@@ -68,58 +73,50 @@ void app_main()
 */
 static void start_ulp_program()
 {
+
     vTaskDelay(100/portTICK_PERIOD_MS);
     ulp_load_binary(0, ulp_main_bin_start, (ulp_main_bin_end - ulp_main_bin_start) / sizeof(uint32_t));
 }
 
-void hulp_configure_i2c_pins(gpio_num_t scl_pin, gpio_num_t sda_pin)
+void hulp_configure_i2c_pins()
 {
+    
   /*Initialisation des pins RTC*/
-    rtc_gpio_init(sda_pin);
-    rtc_gpio_init(scl_pin);
-    rtc_gpio_set_direction(sda_pin,RTC_GPIO_MODE_INPUT_OUTPUT);
-    rtc_gpio_set_direction(scl_pin,RTC_GPIO_MODE_INPUT_OUTPUT);
+   rtc_gpio_init(GPIO_NUM_4); //scl
+   rtc_gpio_init(GPIO_NUM_0);//sda
 
-    const int scl_rtcio_num = rtc_io_number_get(scl_pin);
+  // rtc_gpio_set_level(GPIO_NUM_4,0);  //On met les pin à l'etat haut du sda et scl
+  // rtc_gpio_set_level(GPIO_NUM_0,0);
+
+    //rtc_gpio_hold_en(GPIO_NUM_4);   //On maintient leur état initial aprés le passage en deep sleep 
+    //rtc_gpio_hold_en(GPIO_NUM_0);
+
+    rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_OUTPUT);
+    rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_OUTPUT);
+
+    const int scl_rtcio_num = rtc_io_number_get(GPIO_NUM_4);
     SET_PERI_REG_BITS(rtc_io_desc[scl_rtcio_num].reg, RTC_IO_TOUCH_PAD1_FUN_SEL_V, 0x3, rtc_io_desc[scl_rtcio_num].func);
-    const int sda_rtcio_num = rtc_io_number_get(sda_pin);
+    const int sda_rtcio_num = rtc_io_number_get(GPIO_NUM_0);
     SET_PERI_REG_BITS(rtc_io_desc[sda_rtcio_num].reg, RTC_IO_TOUCH_PAD1_FUN_SEL_V, 0x3, rtc_io_desc[sda_rtcio_num].func);
 
-    REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SCL_SEL, 0); // Touch pad 0 GPIO4 RTC_GPIO10
-    REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SDA_SEL, 0);// Touch pad 1  GPIO0 RTC_GPIO11
+   REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SCL_SEL, 0); // Touch pad 0 GPIO4 RTC_GPIO_10
+   REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SDA_SEL, 0);// Touch pad 1 GPIO0 RTC_GPIO_11
 }
  
 
-esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *config)
+esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
 {
-    if(!config)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_RX_LSB_FIRST, 0);
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_TX_LSB_FIRST, 0);
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, 1);
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, 1);
 
-    if(
-        (config->scl_low > RTC_I2C_SCL_LOW_PERIOD_V) ||
-        (config->scl_high > RTC_I2C_SCL_HIGH_PERIOD_V) ||
-        (config->sda_duty > RTC_I2C_SDA_DUTY_V) ||
-        (config->scl_start > RTC_I2C_SCL_START_PERIOD_V) ||
-        (config->scl_stop > RTC_I2C_SCL_STOP_PERIOD_V) ||
-        (config->timeout > RTC_I2C_TIMEOUT_V)
-      )
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_RX_LSB_FIRST, config->rx_lsbfirst);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_TX_LSB_FIRST, config->tx_lsbfirst);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, config->scl_pushpull);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, config->sda_pushpull);
-
-    REG_SET_FIELD(RTC_I2C_SCL_LOW_PERIOD_REG, RTC_I2C_SCL_LOW_PERIOD, config->scl_low);
-    REG_SET_FIELD(RTC_I2C_SCL_HIGH_PERIOD_REG, RTC_I2C_SCL_HIGH_PERIOD, config->scl_high);
-    REG_SET_FIELD(RTC_I2C_SDA_DUTY_REG, RTC_I2C_SDA_DUTY, config->sda_duty);
-    REG_SET_FIELD(RTC_I2C_SCL_START_PERIOD_REG, RTC_I2C_SCL_START_PERIOD, config->scl_start);
-    REG_SET_FIELD(RTC_I2C_SCL_STOP_PERIOD_REG, RTC_I2C_SCL_STOP_PERIOD, config->scl_stop);
-    REG_SET_FIELD(RTC_I2C_TIMEOUT_REG, RTC_I2C_TIMEOUT, config->timeout);
+    REG_SET_FIELD(RTC_I2C_SCL_LOW_PERIOD_REG, RTC_I2C_SCL_LOW_PERIOD, conf->scl_low);
+    REG_SET_FIELD(RTC_I2C_SCL_HIGH_PERIOD_REG, RTC_I2C_SCL_HIGH_PERIOD, conf->scl_high);
+    REG_SET_FIELD(RTC_I2C_SDA_DUTY_REG, RTC_I2C_SDA_DUTY, conf->sda_duty);
+    REG_SET_FIELD(RTC_I2C_SCL_START_PERIOD_REG, RTC_I2C_SCL_START_PERIOD, conf->scl_start);
+    REG_SET_FIELD(RTC_I2C_SCL_STOP_PERIOD_REG, RTC_I2C_SCL_STOP_PERIOD, conf->scl_stop);
+    REG_SET_FIELD(RTC_I2C_TIMEOUT_REG, RTC_I2C_TIMEOUT, conf->timeout);
     REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_MS_MODE, 1);
     return ESP_OK;
 }
@@ -132,14 +129,10 @@ void register_i2c_slave(uint8_t reg)
 void ini_config(hulp_i2c_controller_config_t *config)
 {
     
-    config->scl_low = 40;                //initialisation fait à la page 664 de la technical reference de l'esp32            
-    config->scl_high = 40;                         
-    config->sda_duty = 16;                         
-    config->scl_start = 30;                        
-    config->scl_stop = 44;                         
-    config->timeout = 200;                         
-    config->scl_pushpull = false;                 
-    config->sda_pushpull = false;                 
-    config->rx_lsbfirst = false;                  
-    config->tx_lsbfirst = false;
+   config->scl_low = 40;                //initialisation fait à la page 664 de la technical reference de l'esp32            
+   config->scl_high = 40;                         
+   config->sda_duty = 16;                         
+   config->scl_start = 30;                        
+   config->scl_stop = 44;                         
+   config->timeout = 200;                         
 }
