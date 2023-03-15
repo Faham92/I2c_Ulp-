@@ -27,21 +27,15 @@ typedef struct {
     uint32_t scl_start;     /*!< FAST_CLK cycles to wait before generating start condition [20b] */
     uint32_t scl_stop;      /*!< FAST_CLK cycles to wait before generating stop condition [20b] */
     uint32_t timeout;       /*!< Maximum number of FAST_CLK cycles that the transmission can take [20b] */
-    bool scl_pushpull;      /*!< SCL is push-pull (true) or open-drain (false) */
-    bool sda_pushpull;      /*!< SDA is push-pull (true) or open-drain (false) */
-    bool rx_lsbfirst;       /*!< Receive LSB first */
-    bool tx_lsbfirst;       /*!< Send LSB first */
 }hulp_i2c_controller_config_t;
 
 void hulp_configure_i2c_pins();
 esp_err_t hulp_configure_i2c_controller( hulp_i2c_controller_config_t* );
 void register_i2c_slave(uint8_t );
-static void start_ulp_program();
+void start_ulp_program();
 void ini_config(hulp_i2c_controller_config_t *);
 
 RTC_DATA_ATTR hulp_i2c_controller_config_t config;
-//gpio_num_t sda_pin = 4;
-//gpio_num_t scl_pin = 0;
 
 void app_main() 
 {
@@ -52,28 +46,21 @@ void app_main()
    hulp_configure_i2c_pins();
    ini_config(&config);
    hulp_configure_i2c_controller(&config);
-    start_ulp_program();
+   start_ulp_program();
   }
   register_i2c_slave(0x77);
   ulp_run((&ulp_entry-RTC_SLOW_MEM));
   vTaskDelay(100/portTICK_PERIOD_MS);
   ESP_LOGE("[Main]","Going to sleep...");
   //uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
-  while(1){
-  uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
-  ESP_LOGE("[Main]","res = 0x%X",res >> 1);
-  vTaskDelay(1000/portTICK_PERIOD_MS);}
+ /* while(1){
+  uint16_t res = (uint16_t)ulp_resu & (uint16_t)0xFF;
+  ESP_LOGE("[Main]","res = 0x%X ",res<<7);
+  vTaskDelay(1000/portTICK_PERIOD_MS);}*/
   esp_deep_sleep_start();
 }
 
-
-// Use this function for all your first time init like setup() used to be
-/*static void init_run_ulp() 
-{
-  
-}
-*/
-static void start_ulp_program()
+void start_ulp_program()
 {
 
     vTaskDelay(100/portTICK_PERIOD_MS);
@@ -87,13 +74,10 @@ void hulp_configure_i2c_pins()
    rtc_gpio_init(GPIO_NUM_4); //scl
    rtc_gpio_init(GPIO_NUM_0);//sda
 
-  // rtc_gpio_set_level(GPIO_NUM_4,0);  //On met les pin à l'etat haut du sda et scl
-  // rtc_gpio_set_level(GPIO_NUM_0,0);
+   rtc_gpio_pullup_en(GPIO_NUM_4);
+   rtc_gpio_pullup_en(GPIO_NUM_0);
 
-    //rtc_gpio_hold_en(GPIO_NUM_4);   //On maintient leur état initial aprés le passage en deep sleep 
-    //rtc_gpio_hold_en(GPIO_NUM_0);
-
-    rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_OUTPUT);
+    rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_ONLY);
     rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_OUTPUT);
 
     const int scl_rtcio_num = rtc_io_number_get(GPIO_NUM_4);
@@ -110,8 +94,8 @@ esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
 {
     REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_RX_LSB_FIRST, 0);
     REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_TX_LSB_FIRST, 0);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, 1);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, 1);
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, 0);
+    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, 0);
 
     REG_SET_FIELD(RTC_I2C_SCL_LOW_PERIOD_REG, RTC_I2C_SCL_LOW_PERIOD, conf->scl_low);
     REG_SET_FIELD(RTC_I2C_SCL_HIGH_PERIOD_REG, RTC_I2C_SCL_HIGH_PERIOD, conf->scl_high);
@@ -125,7 +109,7 @@ esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
 
 void register_i2c_slave(uint8_t reg)
 {
-  REG_SET_FIELD(SENS_SAR_SLAVE_ADDR1_REG,SENS_I2C_SLAVE_ADDR0, reg);
+  SET_PERI_REG_BITS(SENS_SAR_SLAVE_ADDR1_REG,SENS_I2C_SLAVE_ADDR0, reg, SENS_I2C_SLAVE_ADDR0_S);
 }
 
 void ini_config(hulp_i2c_controller_config_t *config)
