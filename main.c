@@ -42,46 +42,55 @@ typedef struct {
     uint32_t timeout;       /*!< Maximum number of FAST_CLK cycles that the transmission can take [20b] */
 }hulp_i2c_controller_config_t;
 
-void hulp_configure_i2c_pins();
-esp_err_t hulp_configure_i2c_controller( hulp_i2c_controller_config_t* );
+void ulp_configure_i2c_pins();
+void init_ulp();
+esp_err_t ulp_configure_i2c_controller( hulp_i2c_controller_config_t* );
 void register_i2c_slave(uint8_t );
 void start_ulp_program();
-void ini_config(hulp_i2c_controller_config_t *);
 static void init_i2c(void);
 void init_bme688(void);
 static esp_err_t i2c_write(i2c_port_t i2c_num, uint8_t* data_wr, size_t size);
 static esp_err_t i2c_write_reg(i2c_port_t i2c_num, uint8_t reg, uint8_t cmd);
 static esp_err_t i2c_read(i2c_port_t i2c_num, uint8_t* data_rd, size_t size);
-static esp_err_t i2c_read_uint16(i2c_port_t i2c_num, uint8_t reg, uint16_t* value);
+static esp_err_t i2c_read_int16(i2c_port_t i2c_num, uint8_t reg, int16_t* value);
 static esp_err_t i2c_read_gas_adc(i2c_port_t i2c_num, uint8_t reg, uint16_t* value);
 static esp_err_t i2c_read_uint8(i2c_port_t i2c_num, uint8_t reg, uint8_t* value);
 static esp_err_t i2c_read_int8(i2c_port_t i2c_num, uint8_t reg, int8_t* value);
-uint8_t calc_rest_heat(uint16_t amb_temp,int8_t par_g1,uint16_t par_g2,uint8_t par_g3,int16_t target_temp,uint8_t res_heat_range,int8_t res_heat_val);
-static uint32_t calc_gas_resistance(uint16_t gas_res_adc, uint8_t gas_range);
+uint8_t calc_rest_heat(uint16_t amb_temp,int8_t par_g1,int16_t par_g2,int8_t par_g3,int16_t target_temp,uint8_t res_heat_range,int8_t res_heat_val);
+static float calc_gas_resistance(uint16_t gas_res_adc, uint8_t gas_range);
 
-RTC_DATA_ATTR hulp_i2c_controller_config_t config;
+RTC_DATA_ATTR hulp_i2c_controller_config_t config = 
+{   
+    .scl_low = 16,           //initialisation fait à la page 664 de la technical reference de l'esp32            
+    .scl_high = 15,                         
+    .sda_duty = 13,                         
+    .scl_start = 21,                        
+    .scl_stop = 25,                         
+    .timeout = 1000,                 };
 
 void app_main() 
 {
-  //esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  uint8_t gas_range,new_data;
-  uint16_t gas_adc;
-  int8_t i=0;
-  uint32_t gas_resistance;
+  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  //uint8_t gas_range,new_data;
+ // uint16_t gas_adc;
+  int i=0;
+  float gas_resistance;
+  esp_sleep_enable_ulp_wakeup();                       //Prévient le microcontroleur qu'il peut etre reveille par l'ulp
   init_i2c();
-  //esp_sleep_enable_ulp_wakeup();                       //Prévient le microcontroleur qu'il peut etre reveille par l'ulp
-  /*if (cause != ESP_SLEEP_WAKEUP_ULP)
-  {
-   hulp_configure_i2c_pins();
-   ini_config(&config);
-   hulp_configure_i2c_controller(&config);
-   start_ulp_program();
-  }*/
-  //register_i2c_slave(0x77);
- //ulp_run((&ulp_entry-RTC_SLOW_MEM));
+  vTaskDelay(3000/portTICK_PERIOD_MS);
   init_bme688();
-  vTaskDelay(1000*60*5/portTICK_PERIOD_MS);
-  while(i<300)
+ // vTaskDelay(1000*60/portTICK_PERIOD_MS);
+  i2c_write_reg(I2C_NUM_0,0x74,0x01); //set forced mode
+  vTaskDelay(2000/portTICK_PERIOD_MS);
+  if (cause != ESP_SLEEP_WAKEUP_ULP)
+  {
+   init_ulp();
+   vTaskDelay(1000/portTICK_PERIOD_MS);
+  }
+   ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
+   vTaskDelay(5000/portTICK_PERIOD_MS);
+  
+  while (1)
   {
    // i2c_read_uint8(I2C_NUM_0,0x2D,&heat_stab);
    // heat_stab=0x10;
@@ -89,55 +98,58 @@ void app_main()
    // i2c_read_int8(I2C_NUM_0,0x1D,&heat_val);
    // heat_val &= 0x40;
    // heat_val >>= 6;
-    i2c_read_uint8(I2C_NUM_0,0x1D,&new_data);
-    new_data &= 0x80;
-    new_data >>= 7;
-    if(new_data)
-    {
+    ///i2c_read_uint8(I2C_NUM_0,0x1D,&new_data);
+   // if(new_data==0x80)
+   // {
+        //i2c_read_gas_adc(I2C_NUM_0,0x2C,&gas_adc); //fetch value in register gas_adc    
+        //i2c_read_uint8(I2C_NUM_0,0x2D,&gas_range); //fetch value in register gas_range   
+        //gas_range &= 0x0F;
         i++;
-        i2c_write_reg(I2C_NUM_0,0x74,0x01);
-        i2c_read_gas_adc(I2C_NUM_0,0x2C,&gas_adc); //fetch value in register gas_adc    
-        i2c_read_uint8(I2C_NUM_0,0x2D,&gas_range); //fetch value in register gas_range   
-        gas_range &= 0x0F;
-        ESP_LOGE("[Main]","gas_range =%d gas_adc=%d ",gas_range,gas_adc);
-        gas_resistance = calc_gas_resistance(gas_adc,gas_range);
-        ESP_LOGE("[Main]","gas_resistance =%lu kOhms",gas_resistance/1000);
-        vTaskDelay(5000/portTICK_PERIOD_MS);
-    }
+        // uint16_t flag = ulp_flag & 0xffff;
+        // uint16_t gas_adc = ulp_gas_adc & 0xffff ;
+       // ESP_LOGE("[Main]","flag= 0x%X",flag);
+        //ESP_LOGE("[Main]","gas_range =0x%lX",ulp_gas_range&0xFFFF);
+        //ESP_LOGE("[Main]","flag= 0x%X",flag);
+         ESP_LOGE("[Main]","gas_adc =%lu",ulp_gas_adc&0xFFFF);
+       // gas_resistance = calc_gas_resistance(gas_adc,gas_range);
+      //  ESP_LOGE("[Main]","gas_resistance =%f kOhm",gas_resistance/1000);
+         vTaskDelay(1000/portTICK_PERIOD_MS);
+        //i2c_write_reg(I2C_NUM_0,0x74,0x01);
+   //}
   }
   //uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
  /* while(1){
-  uint16_t res = (uint16_t)ulp_resu & (uint16_t)0xFF;
-  ESP_LOGE("[Main]","res = 0x%X ",res<<7);
-  vTaskDelay(1000/portTICK_PERIOD_MS);}*/
-  //esp_deep_sleep_start();
+  uint16_t res = (uint16_t)ulp_resu & (uint16_t)0xFF;*/
+   //ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
+   //vTaskDelay(100/portTICK_PERIOD_MS);
+   //ESP_LOGE("[Main]","Going to Deep Sleep");
+   //esp_deep_sleep_start(); 
 }
-
 void init_bme688(void)
 {
-  uint8_t g3,heat_range;
-  uint16_t g2;
-  int8_t g1,heat_val;
+  uint8_t heat_range;
+  int16_t g2;
+  int8_t g1,g3,heat_val;
   i2c_write_reg(I2C_NUM_0,0xE0,0xB6);
   vTaskDelay(1000/portTICK_PERIOD_MS);
-   //i2c_write_reg(I2C_NUM_0,0x72,0x01); 
-  //i2c_write_reg(I2C_NUM_0,0x74,0x54);
-  //i2c_write_reg(I2C_NUM_0,0x75,0x02<<3);
-  i2c_write_reg(I2C_NUM_0,0x71,0x20); //set run_gas to 1 and nb_conv to 0x00
-  i2c_write_reg(I2C_NUM_0,0x64,0x59); //duration 100ms
-  vTaskDelay(100/portTICK_PERIOD_MS);
+  i2c_write_reg(I2C_NUM_0,0x72,0x01); //set humidity
+  i2c_write_reg(I2C_NUM_0,0x74,0x54); //set pressure and temperature
+  i2c_write_reg(I2C_NUM_0,0x75,0x02<<3); // set filter
+  i2c_write_reg(I2C_NUM_0,0x71,0x20); //set run_gas to 1 and nb_conv to 0
   i2c_read_int8(I2C_NUM_0,0xED,&g1);
-  i2c_read_uint16(I2C_NUM_0,0xEB,&g2);
-  i2c_read_uint8(I2C_NUM_0,0xEE,&g3);
+  i2c_read_int16(I2C_NUM_0,0xEB,&g2);
+  i2c_read_int8(I2C_NUM_0,0xEE,&g3);
   ESP_LOGE("[Main]","g1=%d g2=%d g3 =%d ",g1,g2,g3);
   i2c_read_uint8(I2C_NUM_0,0x02,&heat_range);
   i2c_read_int8(I2C_NUM_0,0x00,&heat_val);
-  //ESP_LOGE("[Main]","Going to sleep...");
   heat_range= heat_range>>4;
   heat_range &= 0x03;
-  uint8_t res_heat = calc_rest_heat((uint16_t)25,g1,g2,g3,(int16_t)312,heat_range,heat_val);
+  uint8_t res_heat = calc_rest_heat((uint16_t)20,g1,g2,g3,(int16_t)312,heat_range,heat_val); //calculate res_heat
   ESP_LOGE("[Main]","res =%d ",res_heat);
   i2c_write_reg(I2C_NUM_0,0x5A,res_heat); //set heater temperature
+  i2c_write_reg(I2C_NUM_0,0x64,0x59); //duration 100ms
+  //i2c_write_reg(I2C_NUM_0,0x74,0x01);//set mode to forced mode
+  
 
 }
 
@@ -148,7 +160,7 @@ void start_ulp_program()
     ulp_load_binary(0, ulp_main_bin_start, (ulp_main_bin_end - ulp_main_bin_start) / sizeof(uint32_t));
 }
 
-void hulp_configure_i2c_pins()
+void ulp_configure_i2c_pins()
 {
     
   /*Initialisation des pins RTC*/
@@ -159,25 +171,25 @@ void hulp_configure_i2c_pins()
    rtc_gpio_pullup_en(GPIO_NUM_0);
 
     rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_ONLY);
-    rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_OUTPUT);
+    rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_ONLY);
 
-    const int scl_rtcio_num = rtc_io_number_get(GPIO_NUM_4);
+   /* const int scl_rtcio_num = rtc_io_number_get(GPIO_NUM_4);
     SET_PERI_REG_BITS(rtc_io_desc[scl_rtcio_num].reg, RTC_IO_TOUCH_PAD1_FUN_SEL_V, 0x3, rtc_io_desc[scl_rtcio_num].func);
     const int sda_rtcio_num = rtc_io_number_get(GPIO_NUM_0);
     SET_PERI_REG_BITS(rtc_io_desc[sda_rtcio_num].reg, RTC_IO_TOUCH_PAD1_FUN_SEL_V, 0x3, rtc_io_desc[sda_rtcio_num].func);
 
    REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SCL_SEL, 0); // Touch pad 0 GPIO4 RTC_GPIO_10
-   REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SDA_SEL, 0);// Touch pad 1 GPIO0 RTC_GPIO_11
+   REG_SET_FIELD(RTC_IO_SAR_I2C_IO_REG, RTC_IO_SAR_I2C_SDA_SEL, 0);// Touch pad 1 GPIO0 RTC_GPIO_11*/
 }
  
 
-esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
+esp_err_t ulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
 {
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_RX_LSB_FIRST, 0);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_TX_LSB_FIRST, 0);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, 0);
-    REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, 0);
-
+    //REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_RX_LSB_FIRST, 0);
+    //REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_TX_LSB_FIRST, 0);
+    //REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SCL_FORCE_OUT, 0);
+    //REG_SET_FIELD(RTC_I2C_CTRL_REG, RTC_I2C_SDA_FORCE_OUT, 0);
+     WRITE_PERI_REG(SENS_SAR_I2C_CTRL_REG, 0);
     REG_SET_FIELD(RTC_I2C_SCL_LOW_PERIOD_REG, RTC_I2C_SCL_LOW_PERIOD, conf->scl_low);
     REG_SET_FIELD(RTC_I2C_SCL_HIGH_PERIOD_REG, RTC_I2C_SCL_HIGH_PERIOD, conf->scl_high);
     REG_SET_FIELD(RTC_I2C_SDA_DUTY_REG, RTC_I2C_SDA_DUTY, conf->sda_duty);
@@ -191,17 +203,6 @@ esp_err_t hulp_configure_i2c_controller(hulp_i2c_controller_config_t *conf)
 void register_i2c_slave(uint8_t reg)
 {
   SET_PERI_REG_BITS(SENS_SAR_SLAVE_ADDR1_REG,SENS_I2C_SLAVE_ADDR0, reg, SENS_I2C_SLAVE_ADDR0_S);
-}
-
-void ini_config(hulp_i2c_controller_config_t *config)
-{
-    
-   config->scl_low = 40;                //initialisation fait à la page 664 de la technical reference de l'esp32            
-   config->scl_high = 40;                         
-   config->sda_duty = 16;                         
-   config->scl_start = 30;                        
-   config->scl_stop = 44;                         
-   config->timeout = 200;                         
 }
 
 
@@ -279,7 +280,7 @@ static esp_err_t i2c_read_int8(i2c_port_t i2c_num, uint8_t reg, int8_t* value)
 }
 
 
-static esp_err_t i2c_read_uint16(i2c_port_t i2c_num, uint8_t reg, uint16_t* value)
+static esp_err_t i2c_read_int16(i2c_port_t i2c_num, uint8_t reg, int16_t* value)
 {
     esp_err_t err = i2c_write(i2c_num, &reg, 1);
     if (err == ESP_OK) {
@@ -303,10 +304,9 @@ static esp_err_t i2c_read_gas_adc(i2c_port_t i2c_num, uint8_t reg, uint16_t* val
         err = i2c_read(i2c_num, data_rd, 2);
         if (err == ESP_OK) {
             ESP_LOGE("[Read]","2C= %d 2D=%d",data_rd[0],data_rd[1]);
-            //data_rd[1] &= 0xC0;
-            data_rd[1]= data_rd[1]>>6;
+           // data_rd[1] &= 0xC0;
+            data_rd[1] >>= 6;
             *value = (data_rd[0]<<2|data_rd[1]);
-            ESP_LOGE("[Read]","2C= %d 2D=%d",data_rd[0],data_rd[1]);
         }
     }
     if (err != ESP_OK) {
@@ -321,9 +321,9 @@ static void init_i2c()
     i2c_config_t conf = {                                    //Configuration des pins i2c
         .mode = I2C_MODE_MASTER,
         .sda_io_num = GPIO_NUM_21,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,
         .scl_io_num = GPIO_NUM_22,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
         .master.clk_speed = 100000,
         .clk_flags = 0,
     };
@@ -342,14 +342,14 @@ static void init_i2c()
 }
 
 /* This internal API is used to calculate the heater resistance value using float*/
-uint8_t calc_rest_heat(uint16_t amb_temp,int8_t par_g1,uint16_t par_g2,uint8_t par_g3,int16_t target_temp,uint8_t res_heat_range,int8_t res_heat_val)
+uint8_t calc_rest_heat(uint16_t amb_temp,int8_t par_g1,int16_t par_g2,int8_t par_g3,int16_t target_temp,uint8_t res_heat_range,int8_t res_heat_val)
 {
 
-    int32_t var1;
-    int32_t var2;
-    int32_t var3;
-    int32_t var4;
-    int32_t var5;
+    double var1;
+    double var2;
+    double var3;
+    double var4;
+    double var5;
     uint8_t res_heat;
 
     if (target_temp > 400) /* Cap temperature */
@@ -357,29 +357,34 @@ uint8_t calc_rest_heat(uint16_t amb_temp,int8_t par_g1,uint16_t par_g2,uint8_t p
         target_temp = 400;
     }
 
-    var1 = (((int32_t)amb_temp * par_g3) / 10) << 8;
-    var2 = (par_g1 + 784) * (((((par_g2 + 154009) * target_temp * 5) / 100) + 3276800) / 10);
-    var3 = var1 + (var2 >> 1);
-    var4 = (var3 / (res_heat_range + 4));
-    var5 = (131 * res_heat_val) + 65536;
-    int32_t res_heat_x100 = (int32_t)(((var4 / var5) - 250) * 34);
-    res_heat = (uint8_t)((res_heat_x100 + 50) / 100);
+        var1 = ((double)par_g1 / 16.0) + 49.0;
+        var2 = (((double)par_g2 / 32768.0) * 0.0005) + 0.00235;
+        var3 = (double)par_g3 / 1024.0;
+        var4 = var1 * (1.0 + (var2 * (double) target_temp));
+        var5 = var4 + (var3 * (double)amb_temp);
+        res_heat = (uint8_t)(3.4 * ((var5 * (4.0 / (4.0 + (double)res_heat_range)) * (1.0/(1.0 +
+        ((double)res_heat_val * 0.002)))) - 25));
 
     return res_heat;
 
 }
 
 /* This internal API is used to calculate the gas resistance */
-static uint32_t calc_gas_resistance(uint16_t gas_res_adc, uint8_t gas_range)
+static float calc_gas_resistance(uint16_t gas_res_adc, uint8_t gas_range)
 {
-    uint32_t var1 = UINT32_C(262144) >> gas_range;
-    int32_t var2 = (int32_t) gas_res_adc - INT32_C(512);
-    var2 *= INT32_C(3);
-    var2 = INT32_C(4096) + var2;
-    /* multiplying 10000 then dividing then multiplying by 100 instead of multiplying by 1000000 to prevent
-    overflow */
-    int32_t calc_gas_res = (UINT32_C(10000) * var1) / (uint32_t)var2;
-    int32_t gas_res = calc_gas_res * 100;
+        uint32_t var1 = UINT32_C(262144) >> gas_range;
+        int32_t var2 = (int32_t) gas_res_adc - INT32_C(512);
+        var2 *= INT32_C(3);
+        var2 = INT32_C(4096) + var2;
+        float gas_res = 1000000.0f * (float)var1 / (float)var2;
 
     return gas_res;
+}
+
+void init_ulp (void)
+{
+  ulp_configure_i2c_pins();
+  //ulp_configure_i2c_controller(&config);
+  //register_i2c_slave(0x77);
+  start_ulp_program();
 }
