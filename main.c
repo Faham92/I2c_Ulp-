@@ -76,8 +76,8 @@ void app_main()
     ESP_LOGE("[Main]","gas_range= %d gas_adc=%d",gas_range,gas_adc);
     gas_resistance = calc_gas_resistance(gas_adc,gas_range);
     ESP_LOGE("[Main]","gas_resistance =%f kOhm --> Alarme sent",gas_resistance/1000);
-    ulp_run((&ulp_entry2-RTC_SLOW_MEM));
     vTaskDelay(1000/portTICK_PERIOD_MS);
+    ulp_run((&ulp_entry2-RTC_SLOW_MEM));
     esp_deep_sleep_start();
   }
    ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
@@ -126,8 +126,9 @@ void ulp_configure_i2c_pins()
   /*Initialisation des pins RTC*/
    rtc_gpio_init(GPIO_NUM_4); //scl
    rtc_gpio_init(GPIO_NUM_0);//sda
-   rtc_gpio_init(GPIO_NUM_34);
-   rtc_gpio_init(GPIO_NUM_32);
+
+   rtc_gpio_init(GPIO_NUM_34);  //pin generate wake when his level = 0
+   rtc_gpio_init(GPIO_NUM_32);  // pin handle gpio 34
 
    rtc_gpio_pullup_en(GPIO_NUM_4);
    rtc_gpio_pullup_en(GPIO_NUM_0);

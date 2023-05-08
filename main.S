@@ -88,15 +88,16 @@ calc_gas:
 range:
     i2crd 0x2D 0x77
     and r0,r0,0x0F   //r0 contains results of gas_range
-    jumpr wakeup,10,ge // if gas_range > 10 wake the esp32 
+    jumpr wakeup,10,ge // if gas_range >= 10 wake the esp32 
     i2cwr 0x74 0x01 0x77
     delai
     saut calc_gas
 
-wakeup:
-   delai
+ wakeup:
    send_flag 0
    WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 9, 1, 0)
+   delai
+   WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 9, 1, 1)
    halt
 
 
@@ -112,7 +113,7 @@ entry2:
     delai
     i2crd 0x2D 0x77
     and r0,r0,0x0F   //r0 contains results of gas_range
-    jumpr wakeup2,9,le// if gas_range  =< 9 wake the esp32 
+    jumpr wakeup2,9,le// if gas_range=9 wake the esp32 
     i2cwr 0x74 0x01 0x77
     delai
     saut entry2
@@ -120,5 +121,7 @@ entry2:
 wakeup2:
    send_flag 1
    WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 9, 1, 0)
+   delai
+   WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 9, 1, 1)
    halt
     
