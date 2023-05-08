@@ -21,6 +21,79 @@
 
 // Return from subroutine
 .macro ret sr=r1
-  pop  \sr
-  jump \sr
-.endm
+    pop  \sr
+    jump \sr
+  .endm
+
+.macro delai
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+     wait 65535
+.endm    
+

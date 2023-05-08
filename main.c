@@ -47,66 +47,45 @@ static float calc_gas_resistance(uint16_t gas_res_adc, uint8_t gas_range);
 void app_main() 
 {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
- // uint8_t gas_range,new_data;
-  //uint16_t gas_adc;
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_34,0);          //Prévient le microcontroleur qu'il peut etre reveille par une pin rtc
+  init_i2c();
+  uint8_t gas_range,i=0;
+  uint16_t gas_adc;
   float gas_resistance;
-  esp_sleep_enable_ulp_wakeup();                       //Prévient le microcontroleur qu'il peut etre reveille par l'ulp
   init_i2c();
   vTaskDelay(3000/portTICK_PERIOD_MS);
-  init_bme688();
- // vTaskDelay(1000*60/portTICK_PERIOD_MS);
-  //i2c_write_reg(I2C_NUM_0,0x74,0x01); //set forced mode
-  vTaskDelay(2000/portTICK_PERIOD_MS);
-  if (cause != ESP_SLEEP_WAKEUP_ULP)
+   if ((ulp_flag&0xFFFF)!=0)
+   {
+    init_bme688(); 
+    while(i<180)
+      { 
+        i++;
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+        i2c_write_reg(I2C_NUM_0,0x74,0x01);//set mode to forced mode
+      }
+   }
+  if (cause != ESP_SLEEP_WAKEUP_EXT0)
   {
    init_ulp();
   }
-  ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
-  vTaskDelay(5000/portTICK_PERIOD_MS);
-  
-  while (1)
+   else
   {
-     
+    i2c_read_gas_adc(I2C_NUM_0,0x2C,&gas_adc); //fetch value in register gas_adc    
+    i2c_read_uint8(I2C_NUM_0,0x2D,&gas_range); //fetch value in register gas_range   
+    gas_range &= 0x0F;
+    ESP_LOGE("[Main]","gas_range= %d gas_adc=%d",gas_range,gas_adc);
+    gas_resistance = calc_gas_resistance(gas_adc,gas_range);
+    ESP_LOGE("[Main]","gas_resistance =%f kOhm --> Alarme sent",gas_resistance/1000);
+    ulp_run((&ulp_entry2-RTC_SLOW_MEM));
     vTaskDelay(1000/portTICK_PERIOD_MS);
-    uint8_t gas_range = (uint8_t)ulp_gas_range & (uint8_t)0x0F;
-     uint16_t gas_adc = (uint16_t)ulp_gas_adc & (uint16_t)0xFFFF;
-     ESP_LOGE("[Main]","gas_adc =%d",gas_adc);
-     ESP_LOGE("[Main]","gas_range =%d",gas_range);
-     gas_resistance = calc_gas_resistance(gas_adc,gas_range);
-     ESP_LOGE("[Main]","gas_resistance =%f kOhm",gas_resistance/1000);
-   // i2c_read_uint8(I2C_NUM_0,0x2D,&heat_stab);*/
-   // heat_stab=0x10;
-   // heat_stab >>=4;
-   // i2c_read_int8(I2C_NUM_0,0x1D,&heat_val);
-   // heat_val &= 0x40;
-   // heat_val >>= 6;
-  // i2c_read_uint8(I2C_NUM_0,0x1D,&new_data);
- //  if(new_data==0x80)
-  //  {
-     /*  i2c_read_gas_adc(I2C_NUM_0,0x2C,&gas_adc); //fetch value in register gas_adc    
-        i2c_read_uint8(I2C_NUM_0,0x2D,&gas_range); //fetch value in register gas_range   
-        gas_range &= 0x0F;
-       // i++;
-        // uint16_t flag = ulp_flag & 0xffff;
-        // uint16_t gas_adc = ulp_gas_adc & 0xffff ;
-       // ESP_LOGE("[Main]","flag= 0x%X",flag);
-        ESP_LOGE("[Main]","gas_range =%d",gas_range);
-        //ESP_LOGE("[Main]","flag= 0x%X",flag);
-         ESP_LOGE("[Main]","gas_adc =%d",gas_adc);
-        gas_resistance = calc_gas_resistance(gas_adc,gas_range);
-        ESP_LOGE("[Main]","gas_resistance =%f kOhm",gas_resistance/1000);
-         vTaskDelay(1000/portTICK_PERIOD_MS);
-        i2c_write_reg(I2C_NUM_0,0x74,0x01);*/
-//   }
+    esp_deep_sleep_start();
   }
-  //uint8_t res = (uint8_t)ulp_resu & (uint8_t)0xFF;
- /* while(1){
-  uint16_t res = (uint16_t)ulp_resu & (uint16_t)0xFF;*///
-   //ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
-   //vTaskDelay(100/portTICK_PERIOD_MS);
-   //ESP_LOGE("[Main]","Going to Deep Sleep");
-   //esp_deep_sleep_start(); 
+   ulp_run((&ulp_entry-RTC_SLOW_MEM)); 
+   ESP_LOGE("[Main]","Going to Deep Sleep, everything is fine");
+   esp_deep_sleep_start(); 
 }
+
+
 void init_bme688(void)
 {
   uint8_t heat_range;
@@ -121,18 +100,17 @@ void init_bme688(void)
   i2c_read_int8(I2C_NUM_0,0xED,&g1);
   i2c_read_int16(I2C_NUM_0,0xEB,&g2);
   i2c_read_int8(I2C_NUM_0,0xEE,&g3);
-  ESP_LOGE("[Main]","g1=%d g2=%d g3 =%d ",g1,g2,g3);
+  //ESP_LOGE("[Main]","g1=%d g2=%d g3 =%d ",g1,g2,g3);
   i2c_read_uint8(I2C_NUM_0,0x02,&heat_range);
   i2c_read_int8(I2C_NUM_0,0x00,&heat_val);
   heat_range= heat_range>>4;
   heat_range &= 0x03;
   uint8_t res_heat = calc_rest_heat((uint16_t)25,g1,g2,g3,(int16_t)312,heat_range,heat_val); //calculate res_heat
-  ESP_LOGE("[Main]","res =%d ",res_heat);
+  //ESP_LOGE("[Main]","res =%d ",res_heat);
   i2c_write_reg(I2C_NUM_0,0x5A,res_heat); //set heater temperature
   i2c_write_reg(I2C_NUM_0,0x64,0x59); //duration 100ms
   i2c_write_reg(I2C_NUM_0,0x74,0x01);//set mode to forced mode
   
-
 }
 
 void start_ulp_program()
@@ -148,12 +126,19 @@ void ulp_configure_i2c_pins()
   /*Initialisation des pins RTC*/
    rtc_gpio_init(GPIO_NUM_4); //scl
    rtc_gpio_init(GPIO_NUM_0);//sda
+   rtc_gpio_init(GPIO_NUM_34);
+   rtc_gpio_init(GPIO_NUM_32);
 
    rtc_gpio_pullup_en(GPIO_NUM_4);
    rtc_gpio_pullup_en(GPIO_NUM_0);
 
-    rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_ONLY);
-    rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_ONLY);
+   rtc_gpio_set_level(GPIO_NUM_32,1);
+   
+
+   rtc_gpio_set_direction(GPIO_NUM_4,RTC_GPIO_MODE_INPUT_ONLY);
+   rtc_gpio_set_direction(GPIO_NUM_0,RTC_GPIO_MODE_INPUT_ONLY);
+   rtc_gpio_set_direction(GPIO_NUM_34,RTC_GPIO_MODE_INPUT_ONLY);
+   rtc_gpio_set_direction(GPIO_NUM_32,RTC_GPIO_MODE_OUTPUT_ONLY);
 }
  
 
@@ -254,7 +239,7 @@ static esp_err_t i2c_read_gas_adc(i2c_port_t i2c_num, uint8_t reg, uint16_t* val
         uint8_t data_rd[2] = {0};
         err = i2c_read(i2c_num, data_rd, 2);
         if (err == ESP_OK) {
-            ESP_LOGE("[Read]","2C= %d 2D=%d",data_rd[0],data_rd[1]);
+           // ESP_LOGE("[Read]","2C= %d 2D=%d",data_rd[0],data_rd[1]);
            // data_rd[1] &= 0xC0;
             data_rd[1] >>= 6;
             *value = (data_rd[0]<<2|data_rd[1]);
@@ -336,4 +321,5 @@ void init_ulp (void)
 {
   ulp_configure_i2c_pins();
   start_ulp_program();
+  //ulp_set_wakeup_period(0,30 * 1000000);
 }
