@@ -1,4 +1,6 @@
 
-I am working on a BME688 sensor Bosch and trying to communicate with ULP.
+Communication between the Main CPU and ULP of ESP32 with BME688 sensor 
 
-Use of I2C bitbanging by tomtor/ulp-i2c.git because the RTC_I2C module does not work with the I2C_READ instruction 
+Use of I2C bitbanging by tomtor/ulp-i2c.git because the RTC_I2C module does not work with the I2C_READ instruction.
+
+
